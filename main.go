@@ -14,8 +14,12 @@ import (
 	"time"
 )
 
+var BuildTime string
+var AppVersion = "0.0.1 build on " + BuildTime
+
 var activeConnNum int32
 
+var isShowVersion bool
 var isServer bool
 var port int
 var serverAddr string
@@ -26,6 +30,7 @@ var interval int
 var duration int
 
 func init() {
+	flag.BoolVar(&isShowVersion, "v", false, "show version")
 	flag.BoolVar(&isServer, "s", false, "server mode")
 	flag.IntVar(&port, "p", 9000, "port")
 	flag.StringVar(&serverAddr, "c", "127.0.0.1", "server addresses")
@@ -35,6 +40,11 @@ func init() {
 	flag.IntVar(&interval, "i", 1, "heartbead interval")
 	flag.IntVar(&duration, "d", 10, "test duration")
 	flag.Parse()
+
+	if isShowVersion {
+		fmt.Println(AppVersion)
+		os.Exit(0)
+	}
 }
 
 func main() {
