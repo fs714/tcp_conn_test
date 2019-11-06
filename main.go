@@ -81,7 +81,6 @@ func runClient(laddrStart string, laddrEnd string, serverAddr string, serverPort
 	}
 
 	tick := time.Tick(time.Duration(interval) * time.Second)
-	stat := time.Tick(time.Duration(2) * time.Second)
 	ctx, cancle := context.WithTimeout(context.Background(), time.Duration(duration)*time.Second)
 	defer cancle()
 
@@ -96,17 +95,12 @@ func runClient(laddrStart string, laddrEnd string, serverAddr string, serverPort
 			fmt.Println(time.Now().Format("2006-01-02 15:04:05") + " test finished")
 			return
 		case <-tick:
+			fmt.Println(time.Now().Format("2006-01-02 15:04:05") + " active connection " + strconv.Itoa(int(activeConnNum)))
+			atomic.StoreInt32(&activeConnNum, 0)
 			for _, c := range clients {
 				c.tick <- loop
 			}
 			loop++
-		case <-stat:
-			atomic.StoreInt32(&activeConnNum, 0)
-			for _, c := range clients {
-				c.stat <- 0
-			}
-			time.Sleep(1800 * time.Millisecond)
-			fmt.Println(time.Now().Format("2006-01-02 15:04:05") + " active connection " + strconv.Itoa(int(activeConnNum)))
 		}
 	}
 }
@@ -118,13 +112,11 @@ type client struct {
 	serverPort int
 	conn       *net.Conn
 	tick       chan int
-	stat       chan int
 	quit       chan int
 }
 
 func (c *client) Start() {
 	c.tick = make(chan int, 10)
-	c.stat = make(chan int, 10)
 	c.quit = make(chan int, 1)
 
 	dialer := &net.Dialer{
@@ -161,6 +153,8 @@ func (c *client) Start() {
 				return
 			}
 
+			atomic.AddInt32(&activeConnNum, 1)
+
 			if strings.TrimSpace(string(buf)) == "pong" {
 				_, err = conn.Write([]byte("ping\n"))
 				if err != nil {
@@ -168,8 +162,6 @@ func (c *client) Start() {
 					return
 				}
 			}
-		case <-c.stat:
-			atomic.AddInt32(&activeConnNum, 1)
 		case <-c.quit:
 			err = conn.Close()
 			if err != nil {
