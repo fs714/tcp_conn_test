@@ -15,7 +15,7 @@ import (
 )
 
 var BuildTime string
-var AppVersion = "0.0.1 build on " + BuildTime
+var AppVersion = "0.0.2 build on " + BuildTime
 
 var activeConnNum int32
 
@@ -27,6 +27,7 @@ var laddrStart string
 var laddrEnd string
 var connNum int
 var interval int
+var dataLen int
 var duration int
 
 func init() {
@@ -38,6 +39,7 @@ func init() {
 	flag.StringVar(&laddrEnd, "le", "0.0.0.0", "end ip of local addresses")
 	flag.IntVar(&connNum, "n", 10, "number of tcp connection")
 	flag.IntVar(&interval, "i", 1, "heartbead interval")
+	flag.IntVar(&dataLen, "l", 100, "test data length")
 	flag.IntVar(&duration, "d", 10, "test duration")
 	flag.Parse()
 
@@ -49,17 +51,17 @@ func init() {
 
 func main() {
 	if isServer {
-		err := runServer(port)
+		err := runServer(port, dataLen)
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(0)
 		}
 	} else {
-		runClient(laddrStart, laddrEnd, serverAddr, port, interval, connNum, duration)
+		runClient(laddrStart, laddrEnd, serverAddr, port, interval, dataLen, connNum, duration)
 	}
 }
 
-func runClient(laddrStart string, laddrEnd string, serverAddr string, serverPort int, interval int, num int, duration int) {
+func runClient(laddrStart string, laddrEnd string, serverAddr string, serverPort int, interval int, dataLen int, num int, duration int) {
 	var clients []*client
 	laddr := laddrStart
 	newStart := true
@@ -75,7 +77,10 @@ func runClient(laddrStart string, laddrEnd string, serverAddr string, serverPort
 			laddr = getNextIP(laddr, 1)
 		}
 
-		c := client{index: i, localAddr: laddr, serverAddr: serverAddr, serverPort: serverPort}
+		sendData := make([]byte, dataLen)
+		copy(sendData, "ping")
+		sendData = append(sendData, []byte("\n")...)
+		c := client{index: i, localAddr: laddr, serverAddr: serverAddr, serverPort: serverPort, sendData: sendData}
 		clients = append(clients, &c)
 		go c.Start()
 	}
@@ -110,6 +115,7 @@ type client struct {
 	localAddr  string
 	serverAddr string
 	serverPort int
+	sendData   []byte
 	conn       *net.Conn
 	tick       chan int
 	quit       chan int
@@ -132,8 +138,7 @@ func (c *client) Start() {
 	}
 	c.conn = &conn
 	fmt.Printf("%d %s --> %s\n", c.index, conn.LocalAddr().String(), conn.RemoteAddr().String())
-
-	_, err = conn.Write([]byte("ping\n"))
+	_, err = conn.Write(c.sendData)
 	if err != nil {
 		fmt.Println("Error sending first ping: ", err.Error())
 		return
@@ -155,8 +160,8 @@ func (c *client) Start() {
 
 			atomic.AddInt32(&activeConnNum, 1)
 
-			if strings.TrimSpace(string(buf)) == "pong" {
-				_, err = conn.Write([]byte("ping\n"))
+			if strings.Contains(strings.TrimSpace(buf), "pong") {
+				_, err = conn.Write(c.sendData)
 				if err != nil {
 					fmt.Println(strconv.Itoa(loop)+" Error sending ping: ", err.Error())
 					return
@@ -172,7 +177,7 @@ func (c *client) Start() {
 	}
 }
 
-func runServer(serverPort int) (err error) {
+func runServer(serverPort int, dataLen int) (err error) {
 	l, err := net.Listen("tcp", "0.0.0.0:"+strconv.Itoa(serverPort))
 
 	if err != nil {
@@ -181,17 +186,21 @@ func runServer(serverPort int) (err error) {
 		return
 	}
 
+	sendData := make([]byte, dataLen)
+	copy(sendData, "pong")
+	sendData = append(sendData, []byte("\n")...)
+
 	for {
 		conn, err := l.Accept()
 		if err == nil {
-			go serverProcess(conn)
+			go serverProcess(conn, sendData)
 		} else {
 			fmt.Println(err.Error())
 		}
 	}
 }
 
-func serverProcess(conn net.Conn) {
+func serverProcess(conn net.Conn, sendData []byte) {
 	bufferReader := bufio.NewReader(conn)
 	for {
 		buf, err := bufferReader.ReadString('\n')
@@ -202,8 +211,8 @@ func serverProcess(conn net.Conn) {
 			return
 		}
 
-		if strings.TrimSpace(string(buf)) == "ping" {
-			_, _ = conn.Write([]byte("pong\n"))
+		if strings.Contains(strings.TrimSpace(buf), "ping") {
+			_, _ = conn.Write(sendData)
 		}
 	}
 }
